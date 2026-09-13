@@ -4,7 +4,19 @@ import {Compass,Plus,Minus,RotateCcw,Maximize,Minimize,Layers,Footprints,Coffee,
 import type {Destination} from '@/lib/travel/destinations';
 import type {JourneyDay} from '@/lib/travel/sample-journey';
 interface Props {destination:Destination;day:JourneyDay; selected:number; progress:number; playing:boolean; onSelect:(i:number)=>void; immersive:boolean; setImmersive:(b:boolean)=>void; reducedMotion:boolean}
-export function travelPoint(day:JourneyDay,progress:number){const n=day.stops.length-1;const raw=progress/100*n;const idx=Math.min(n,Math.floor(raw));const a=day.stops[idx],b=day.stops[Math.min(idx+1,n)];const t=Math.max(0,Math.min(1,(raw-idx-.23)/.77));const mid=(a.x+b.x)/2;const u=1-t;return {x:u*u*u*a.x+3*u*u*t*mid+3*u*t*t*mid+t*t*t*b.x,y:u*u*u*a.y+3*u*u*t*a.y+3*u*t*t*b.y+t*t*t*b.y,moving:t>0&&idx<n,index:idx};}
+export function travelPoint(day:JourneyDay,progress:number){
+ const stops=day.stops??[];
+ if(!stops.length)return {x:50,y:50,moving:false,index:0};
+ if(stops.length===1)return {x:stops[0].x,y:stops[0].y,moving:false,index:0};
+ const n=stops.length-1;
+ const safeProgress=Number.isFinite(progress)?Math.max(0,Math.min(100,progress)):0;
+ const raw=safeProgress/100*n;
+ const idx=Math.max(0,Math.min(n,Math.floor(raw)));
+ const a=stops[idx]??stops[0],b=stops[Math.min(idx+1,n)]??a;
+ const t=Math.max(0,Math.min(1,(raw-idx-.23)/.77));
+ const mid=(a.x+b.x)/2;const u=1-t;
+ return {x:u*u*u*a.x+3*u*u*t*mid+3*u*t*t*mid+t*t*t*b.x,y:u*u*u*a.y+3*u*u*t*a.y+3*u*t*t*b.y+t*t*t*b.y,moving:t>0&&idx<n,index:idx};
+}
 export default function StoryMap({destination,day,selected,progress,playing,onSelect,immersive,setImmersive,reducedMotion}:Props){
  const [zoom,setZoom]=useState(1),[flat,setFlat]=useState(false),[pan,setPan]=useState({x:0,y:0}),[dragging,setDragging]=useState(false);
  const drag=useRef<{x:number;y:number;px:number;py:number}|null>(null);
