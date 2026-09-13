@@ -56,6 +56,7 @@ test('invalid dates, missing coordinates and empty destination are rejected',asy
   const response=await handleApi(new Request('http://localhost/api/'+path,{method:'POST',body:JSON.stringify(body)}));assert.equal(response.status,400);
  }
  const malformed=await handleApi(new Request('http://localhost/api/itinerary',{method:'POST',body:'{'}));assert.equal(malformed.status,400);
+ const phaseOneInvalid=await handleApi(new Request('http://localhost/api/plan',{method:'POST',body:JSON.stringify({destination:'',days:1})}));assert.equal(phaseOneInvalid.status,400);
 });
 test('future forecasts and impossible coordinates fail before any network call',async()=>{
  await assert.rejects(getWeather(48,2,'2099-01-01',1),/16 days/);
@@ -97,3 +98,4 @@ test('OmniRoute uses the OpenAI-compatible Astra path without exposing a provide
  try{const result=await callOllama([{role:'user',content:'test'}]);assert.equal(result.message?.content,'{}');assert.equal(requestBody?.model,'azure/gpt-6-astra');assert.equal(requestBody?.max_completion_tokens,2400);assert.equal(requestBody?.max_tokens,undefined);assert.equal(auth,'Bearer test-key');}
  finally{globalThis.fetch=originalFetch;for(const [name,value] of Object.entries(prior)){if(value===undefined)delete process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name]!];else process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name] as string]=value;}}
 });
+
