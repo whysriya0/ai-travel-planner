@@ -20,7 +20,7 @@ export function travelPoint(day:JourneyDay,progress:number){
 export default function StoryMap({destination,day,selected,progress,playing,onSelect,immersive,setImmersive,reducedMotion}:Props){
  const [zoom,setZoom]=useState(1),[flat,setFlat]=useState(false),[pan,setPan]=useState({x:0,y:0}),[dragging,setDragging]=useState(false);
  const drag=useRef<{x:number;y:number;px:number;py:number}|null>(null);
- const point=travelPoint(day,progress);const stop=day.stops[selected];const path=day.stops.map((s,i)=>i===0?`M${s.x*10},${s.y*10}`:`C${(day.stops[i-1].x+s.x)*5},${day.stops[i-1].y*10} ${(day.stops[i-1].x+s.x)*5},${s.y*10} ${s.x*10},${s.y*10}`).join(' ');
+ const point=travelPoint(day,progress);const safeSelected=Number.isFinite(selected)?Math.max(0,Math.min(selected,day.stops.length-1)):0;const stop=day.stops[safeSelected]??day.stops[0];const path=day.stops.map((s,i)=>i===0?`M${s.x*10},${s.y*10}`:`C${(day.stops[i-1].x+s.x)*5},${day.stops[i-1].y*10} ${(day.stops[i-1].x+s.x)*5},${s.y*10} ${s.x*10},${s.y*10}`).join(' ');
  useEffect(()=>{setPan({x:0,y:0});setZoom(1)},[day.id]);
  const shift=playing&&!reducedMotion?{x:(50-point.x)*.07,y:(50-point.y)*.05}:{x:0,y:0};
  const reset=()=>{setPan({x:0,y:0});setZoom(1);setFlat(false)};
@@ -29,7 +29,7 @@ export default function StoryMap({destination,day,selected,progress,playing,onSe
   <div className="map-world" style={{transform:`perspective(1500px) translate(${pan.x+shift.x}%,${pan.y+shift.y}%) scale(${zoom*(flat?1:1.075)}) rotateX(${flat||reducedMotion?0:7}deg) rotateZ(${flat?0:-1}deg)`}} onPointerDown={e=>{if(e.pointerType==='touch'||(e.target as HTMLElement).closest('button'))return;drag.current={x:e.clientX,y:e.clientY,px:pan.x,py:pan.y};e.currentTarget.setPointerCapture(e.pointerId);setDragging(true)}} onPointerMove={e=>{if(!drag.current)return;setPan({x:Math.max(-14,Math.min(14,drag.current.px+(e.clientX-drag.current.x)/25)),y:Math.max(-12,Math.min(12,drag.current.py+(e.clientY-drag.current.y)/25))})}} onPointerUp={()=>{drag.current=null;setDragging(false)}} onPointerCancel={()=>{drag.current=null;setDragging(false)}}>
    <img className="scene-image" src={destination.image} alt={`Artistic ${destination.name} landscape with miniature scenery and animated itinerary routes`} draggable={false}/>
    <svg className="route-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"><path d={path} className="route-underlay"/><path d={path} className="route-track"/><path d={path} className={`route-flow ${playing?'moving':''}`}/></svg>
-   {day.stops.map((s,i)=>{const Icon=s.kind==='rest'?Coffee:s.kind==='stay'?BedDouble:undefined;return <button key={s.id} onClick={()=>onSelect(i)} className={`map-pin ${i===selected?'active':''} ${s.kind}`} style={{left:s.x+'%',top:s.y+'%'}} aria-label={`View stop ${i+1}: ${s.name}`} aria-pressed={selected===i}>{Icon?<Icon size={16}/>:i+1}<span>{s.shortName}</span></button>})}
+   {day.stops.map((s,i)=>{const Icon=s.kind==='rest'?Coffee:s.kind==='stay'?BedDouble:undefined;return <button key={s.id} onClick={()=>onSelect(i)} className={`map-pin ${i===safeSelected?'active':''} ${s.kind}`} style={{left:s.x+'%',top:s.y+'%'}} aria-label={`View stop ${i+1}: ${s.name}`} aria-pressed={safeSelected===i}>{Icon?<Icon size={16}/>:i+1}<span>{s.shortName}</span></button>})}
    {playing&&<div className={`traveler ${point.moving?'walking':'resting'}`} style={{left:point.x+'%',top:point.y+'%'}} aria-hidden="true"><ModeIcon size={17}/></div>}
   </div>
   <div className="map-vignette"/>
