@@ -1,6 +1,7 @@
 import {itinerarySchema,type Itinerary,type ItineraryRequest} from './types';
 import {searchPlaces,type PlaceSearchResult} from './places';
 import {getWeather} from './weather';
+import {getDistanceTime} from './distance';
 import {journey} from './travel/sample-journey';
 
 type ChatMessage={role:'system'|'user'|'assistant'|'tool';content:string;tool_calls?:Array<{function:{name:string;arguments:Record<string,unknown>|string}}>};
@@ -11,6 +12,7 @@ const ollamaModel=()=>process.env.OLLAMA_MODEL??'qwen2.5:14b';
 const toolSchemas=[
  {type:'function',function:{name:'search_places',description:'Find real places for a destination. Always use this before inventing a placeId or coordinates.',parameters:{type:'object',properties:{query:{type:'string'},location:{type:'string'}},required:['query','location']}}},
  {type:'function',function:{name:'get_weather',description:'Get a daily forecast. Use it before finalizing outdoor activities and mention weather-aware choices in each stop reason.',parameters:{type:'object',properties:{lat:{type:'number'},lng:{type:'number'},startDate:{type:'string'},days:{type:'integer'}},required:['lat','lng','startDate','days']}}}
+ ,{type:'function',function:{name:'get_distance_time',description:'Estimate travel time between two places so the itinerary stays geographically coherent. Use it when ordering stops.',parameters:{type:'object',properties:{originLat:{type:'number'},originLng:{type:'number'},destinationLat:{type:'number'},destinationLng:{type:'number'}},required:['originLat','originLng','destinationLat','destinationLng']}}}
 ];
 const schemaText=JSON.stringify({destination:'string',days:'integer',stops:[{id:'string',day:'integer',name:'string',placeId:'string',lat:'number',lng:'number',category:'string',estimatedCost:'number',reason:'string',rating:'number?'}],weather:[{day:'integer',date:'YYYY-MM-DD',condition:'string',tempHighC:'number',tempLowC:'number',precipitationChance:'number'}],totalEstimatedCost:'number'});
 
@@ -21,12 +23,12 @@ async function callOllama(messages:ChatMessage[]){const response=await fetch(`${
 export async function generateItinerary(input:ItineraryRequest):Promise<AgentResult>{
  const model=ollamaModel();let place:PlaceSearchResult={name:input.destination,placeId:`local:${input.destination}`,lat:0,lng:0};let weather:Awaited<ReturnType<typeof getWeather>>=[];
  try{const places=await searchPlaces(input.destination,input.destination);place=places[0]??place;weather=await getWeather(place.lat,place.lng,input.startDate,input.days);}catch(error){console.warn('Travel data providers unavailable',error);}
- const system=`You are Roam, a careful local travel planner. Respond with ONLY valid JSON matching this exact schema and no markdown: ${schemaText}. Use the supplied tools for real place and weather data. Every stop must have a real tool-backed placeId or a clearly labeled sample: id. Use weather results to justify outdoor or indoor choices in reason. Keep the total within the requested budget when possible.`;
+ const system=`You are Roam, a careful local travel planner. Respond with ONLY valid JSON matching this exact schema and no markdown: ${schemaText}. Use search_places for real stops, get_weather before outdoor choices, and get_distance_time when ordering nearby stops. Every stop must have a real tool-backed placeId or a clearly labeled sample: id. Use weather and travel time results to justify choices in reason. Keep the total within the requested budget when possible.`;
  const messages:ChatMessage[]=[{role:'system',content:system},{role:'user',content:JSON.stringify({request:input,resolvedDestination:place,initialWeather:weather})}];
  try{
   for(let attempt=0;attempt<6;attempt++){
    const result=await callOllama(messages);const message=result.message;if(!message)throw new Error('Ollama returned no message');messages.push(message);
-   if(message.tool_calls?.length){for(const call of message.tool_calls){const args=typeof call.function.arguments==='string'?JSON.parse(call.function.arguments):call.function.arguments;let value:unknown;if(call.function.name==='search_places')value=await searchPlaces(String(args.query??input.destination),String(args.location??input.destination));else if(call.function.name==='get_weather')value=await getWeather(Number(args.lat),Number(args.lng),String(args.startDate??input.startDate),Math.max(1,Math.min(14,Number(args.days??input.days))));else value={error:`Unknown tool ${call.function.name}`};messages.push({role:'tool',content:JSON.stringify(value)});}continue;}
+   if(message.tool_calls?.length){for(const call of message.tool_calls){const args=typeof call.function.arguments==='string'?JSON.parse(call.function.arguments):call.function.arguments;let value:unknown;if(call.function.name==='search_places')value=await searchPlaces(String(args.query??input.destination),String(args.location??input.destination));else if(call.function.name==='get_weather')value=await getWeather(Number(args.lat),Number(args.lng),String(args.startDate??input.startDate),Math.max(1,Math.min(14,Number(args.days??input.days))));else if(call.function.name==='get_distance_time')value=await getDistanceTime({lat:Number(args.originLat),lng:Number(args.originLng)},{lat:Number(args.destinationLat),lng:Number(args.destinationLng)});else value={error:`Unknown tool ${call.function.name}`};messages.push({role:'tool',content:JSON.stringify(value)});}continue;}
    const parsed=itinerarySchema.safeParse(JSON.parse(extractJson(message.content)));if(parsed.success)return {itinerary:parsed.data,source:'ollama',model};messages.push({role:'user',content:`Your previous JSON failed validation: ${parsed.error.message}. Return only corrected JSON matching the schema.`});
   }
  }catch(error){console.warn('Ollama itinerary generation failed',error);}
