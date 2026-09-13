@@ -29,4 +29,3 @@ export const journey:JourneyDay[]=[
  ]}
 ];
 export const totalEstimate=journey.reduce((a,d)=>a+d.stops.reduce((s,p)=>s+p.estimatedCost,0),0);
-

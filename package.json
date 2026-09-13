@@ -6,6 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "dev:local": "node scripts/dev-local.mjs",
+    "build:preview": "node scripts/build-preview.mjs",
+    "test:backend": "node scripts/test-backend.mjs",
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",
@@ -66,4 +69,3 @@
     }
   }
 }
-

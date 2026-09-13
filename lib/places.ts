@@ -1,26 +1,23 @@
-export type PlaceSearchResult={name:string;placeId:string;lat:number;lng:number;rating?:number;photoUrl?:string};
+import { z } from 'zod';
+import { fetchJson, TravelError } from './http';
+import { placesRequestSchema } from './types';
 
-type GooglePlace={name?:string;place_id?:string;geometry?:{location?:{lat?:number;lng?:number}};rating?:number;photos?:Array<{photo_reference?:string}>};
+const placeSchema = z.object({
+  id: z.string().min(1), displayName: z.object({text: z.string().min(1)}),
+  location: z.object({latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180)}),
+  rating: z.number().min(0).max(5).optional()
+});
+export type PlaceSearchResult = {name: string; placeId: string; lat: number; lng: number; rating?: number};
 
-export async function searchPlaces(query:string,location:string):Promise<PlaceSearchResult[]>{
- const key=process.env.GOOGLE_MAPS_API_KEY;
- if(key){
-  const url=new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
-  url.searchParams.set('query',`${query}, ${location}`);url.searchParams.set('key',key);
-  const response=await fetch(url,{cache:'no-store'});
-  if(response.ok){
-   const payload=await response.json() as {results?:GooglePlace[]};
-   const places=(payload.results??[]).map((place):PlaceSearchResult|null=>{const lat=place.geometry?.location?.lat,lng=place.geometry?.location?.lng;if(!place.name||!place.place_id||typeof lat!=='number'||typeof lng!=='number')return null;return {name:place.name,placeId:place.place_id,lat,lng,rating:place.rating}}).filter((place):place is PlaceSearchResult=>Boolean(place));
-   if(places.length)return places;
-  }
- }
- const url=new URL('https://nominatim.openstreetmap.org/search');url.searchParams.set('q',`${query}, ${location}`);url.searchParams.set('format','jsonv2');url.searchParams.set('limit','6');
- const response=await fetch(url,{headers:{'User-Agent':'Roam travel planner demo'},cache:'no-store'});
- if(response.ok){
-  const payload=await response.json() as Array<{display_name?:string;lat?:string;lon?:string;osm_type?:string;osm_id?:number}>;
-  const places=payload.map((place):PlaceSearchResult|null=>{const lat=Number(place.lat),lng=Number(place.lon);if(!place.display_name||!Number.isFinite(lat)||!Number.isFinite(lng))return null;return {name:place.display_name.split(',')[0],placeId:`${place.osm_type??'osm'}:${place.osm_id??place.display_name}`,lat,lng}}).filter((place):place is PlaceSearchResult=>Boolean(place));
-  if(places.length)return places;
- }
- return [{name:location,placeId:`local:${location.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`,lat:0,lng:0}];
+export async function searchPlaces(query: string, location: string): Promise<PlaceSearchResult[]> {
+  placesRequestSchema.parse({query, location});
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  if (!key) throw new TravelError('Add GOOGLE_MAPS_API_KEY to .env.local and enable Places API (New) to search real activities.', 503);
+  const payload = await fetchJson<unknown>('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.rating'},
+    body: JSON.stringify({textQuery: query + ', ' + location, pageSize: 10})
+  });
+  const parsed = z.object({places: z.array(placeSchema).default([])}).parse(payload);
+  return parsed.places.map(place => ({name: place.displayName.text, placeId: place.id, lat: place.location.latitude, lng: place.location.longitude, rating: place.rating}));
 }
-

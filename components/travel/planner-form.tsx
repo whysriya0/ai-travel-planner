@@ -15,4 +15,3 @@ return <form className="planner-form" onSubmit={e=>{e.preventDefault();onSubmit(
  <button className="primary-cta" type="submit"><Sparkles size={18}/>Create my journey<ArrowUpRight size={20}/></button>
  <p className="form-disclaimer">Explore three curated destinations. This interactive demo uses sample plans and estimates.</p>
 </form>}
-

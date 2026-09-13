@@ -43,4 +43,3 @@ export default function StoryMap({destination,day,selected,progress,playing,onSe
  </div>
 }
 
-

@@ -122,18 +122,48 @@ The portable build runs Vinext directly without a host `timeout` command. The ma
 
 ## Roam local agent
 
-The first backend slice lives in `app/api/itinerary/route.ts`. It validates a travel brief, resolves a destination with Google Places when `GOOGLE_MAPS_API_KEY` is available (otherwise OpenStreetMap Nominatim), fetches Open-Meteo weather, and runs a validated tool-calling loop against Ollama. If Ollama is offline or returns malformed JSON, the route returns a safe sample itinerary so the demo never ends on a blank screen.
+The homepage and illustrated story map are a UI preview. Live planning runs on the demo computer with Ollama; the hosted Sites URL cannot reach a laptop's localhost.
 
-Copy `.env.example` to `.env.local`, install Ollama, and pull the recommended model:
+### Run the complete local demo
 
-```bash
-ollama pull qwen2.5:14b
+Use Node 22.13 or newer and install the locked dependencies with `npm ci`. In PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+ollama pull qwen2.5:3b
+npm run dev:local
 ```
 
-Start the Next app and Ollama locally. The travel brief's **Ask the Ollama agent** control calls the route; the public Sites deployment remains a UI preview because Ollama is intentionally local to the demo machine.
+Copy the env template only if `.env.local` does not already exist. Set `GOOGLE_MAPS_API_KEY` there privately, enable **Places API (New)** in that Google Cloud project, and restart the local app. The key remains on the server and is excluded from Git. Google requires its own project/billing configuration.
+
+Open **http://127.0.0.1:5173** → Start planning → enter a city and country, dates, days, travelers and budget → Ask the Ollama agent. Generated activities, explanations, estimates and forecasts appear in the brief. The illustrated map remains a separate sample.
+
+`npm run dev:local` rebuilds the UI and backend, then serves both on the same loopback origin. Restart after source or environment edits. It avoids the Windows Vite/esbuild subprocess issue on the original demo machine. The default model is qwen2.5:3b; set `OLLAMA_MODEL` to a larger installed tool-capable model when hardware allows.
+
+### Connected tools and behavior
+
+- **search_places**: Google Places Text Search (New), with a minimal field mask. Missing credentials produce a setup error; no fabricated places or silently relabeled sample.
+- **get_weather**: Open-Meteo daily temperatures, precipitation probability and weather codes. Trips outside the available forecast window receive an explicit availability note.
+- **get_distance_time**: OSRM public demo routing, driving only. These are road estimates, not walking, transit or live traffic data.
+- Zod validates requests, tool arguments, provider responses and final plans. Every returned place ID must come from a lookup. Names and coordinates are supplied by the server; activity totals are recalculated per traveler.
+- The tool loop allows six model responses, up to four tools per response, per-provider timeouts and a six-minute deadline checked between rounds. Invalid JSON and invalid plans get correction attempts. Failed tools appear as warnings; exhausted planning returns an error.
+- Only one local planning request runs at a time. The local server checks host/origin and limits request bodies.
+- Costs are AI activity estimates in USD, excluding flights and accommodation. Prices, opening hours, availability and bookings are not verified. No Plaid, booking, consensus or live map integration is implemented yet.
+
+### API and verification
+
+`GET /api/health` reports Ollama/model availability and whether Places is configured, without exposing secrets. `POST /api/itinerary` accepts destination, startDate (YYYY-MM-DD), days (1–14), budget, travelers and optional interests. Standalone POST routes also exist at `/api/places`, `/api/weather`, and `/api/distance`.
+
+```powershell
+npm run test:backend
+node scripts/smoke-ollama.mjs
+```
+
+The backend tests use mocked providers to cover retries, invented IDs, tool errors, costs, invalid input and timeouts. The optional smoke test uses **live Ollama, weather and routing with explicitly labeled place fixtures**; it does not verify Google Places. A real Places key is required to verify generation end to end with live places.
+
+Provider references: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [Google Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search), [Open-Meteo](https://open-meteo.com/en/docs), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). Public weather/routing services have usage limits; replace demo routing with an appropriate production service before wider release.
 
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
-

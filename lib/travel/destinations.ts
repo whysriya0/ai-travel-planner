@@ -42,4 +42,3 @@ export const destinations:Destination[]=[{id:'kyoto',name:'Kyoto',country:'Japan
 export interface TripPreferences {destinationId:string;startDate:string;days:number;travelers:number;budget:number;pace:'relaxed'|'balanced';interest:'Culture'|'Nature'|'Food'}
 export const defaultPreferences:TripPreferences={destinationId:'kyoto',startDate:'2027-04-12',days:3,travelers:2,budget:900,pace:'balanced',interest:'Culture'};
 export function createDemoTrip(preferences:TripPreferences):JourneyDay[]{const destination=destinations.find(d=>d.id===preferences.destinationId)!;const order=[...destination.days];const first=preferences.interest==='Nature'?1:preferences.interest==='Food'?2:0;const sorted=[order[first],...order.filter((_,i)=>i!==first)].slice(0,preferences.days);return sorted.map((d,i)=>({...d,id:i+1,mood:preferences.pace==='relaxed'?'Less rushing. More room for the unexpected.':d.mood,stops:preferences.pace==='relaxed'?d.stops.filter((_,j)=>j!==1):[...d.stops]}));}
-
