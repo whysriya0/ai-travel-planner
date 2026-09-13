@@ -1,0 +1,18 @@
+"use client";
+import {ArrowUpRight,MapPin,CalendarDays,Wallet,Users,Leaf,Compass,UtensilsCrossed,Sparkles} from 'lucide-react';
+import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
+import {RadioGroup,RadioGroupItem} from '@/components/ui/radio-group';
+import {destinations,type TripPreferences} from '@/lib/travel/destinations';
+export default function PlannerForm({value,onChange,onSubmit}:{value:TripPreferences;onChange:(p:TripPreferences)=>void;onSubmit:()=>void}){
+const set=<K extends keyof TripPreferences>(key:K,v:TripPreferences[K])=>onChange({...value,[key]:v});
+return <form className="planner-form" onSubmit={e=>{e.preventDefault();onSubmit()}}>
+ <label className="field-label" htmlFor="destination"><MapPin size={15}/>Where are we going?</label>
+ <Select value={value.destinationId} onValueChange={v=>set('destinationId',v)}><SelectTrigger id="destination" className="planner-select"><SelectValue/></SelectTrigger><SelectContent>{destinations.map(d=><SelectItem value={d.id} key={d.id}>{d.label}</SelectItem>)}</SelectContent></Select>
+ <div className="form-row"><div><label className="field-label" htmlFor="start-date"><CalendarDays size={15}/>Start date</label><input id="start-date" type="date" required min={new Date().toISOString().slice(0,10)} max="2030-12-31" value={value.startDate} onChange={e=>set('startDate',e.target.value)}/></div><div><label className="field-label" htmlFor="trip-days">How long?</label><Select value={String(value.days)} onValueChange={v=>set('days',Number(v))}><SelectTrigger id="trip-days" className="planner-select"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="2">2 days</SelectItem><SelectItem value="3">3 days</SelectItem></SelectContent></Select></div></div>
+ <div className="form-row"><div><label className="field-label" htmlFor="budget"><Wallet size={15}/>Trip budget · USD</label><div className="money-input"><span>$</span><input id="budget" type="number" required min="50" max="100000" step="1" value={value.budget||''} onChange={e=>set('budget',Number(e.target.value))}/></div></div><div><label className="field-label" htmlFor="travelers"><Users size={15}/>Travelers</label><Select value={String(value.travelers)} onValueChange={v=>set('travelers',Number(v))}><SelectTrigger id="travelers" className="planner-select"><SelectValue/></SelectTrigger><SelectContent>{[1,2,3,4,5,6].map(n=><SelectItem value={String(n)} key={n}>{n} {n===1?'traveler':'travelers'}</SelectItem>)}</SelectContent></Select></div></div>
+ <label className="field-label" id="pace-label">Find your rhythm</label><RadioGroup aria-labelledby="pace-label" className="pace-options" value={value.pace} onValueChange={v=>set('pace',v as TripPreferences['pace'])}>{[{id:'relaxed',label:'Slow & easy',icon:Leaf},{id:'balanced',label:'A little of everything',icon:Compass}].map(p=><label key={p.id} className={value.pace===p.id?'chosen':''}><RadioGroupItem value={p.id}/><p.icon size={16}/><span>{p.label}</span></label>)}</RadioGroup>
+ <label className="field-label" id="interest-label">A little more of...</label><RadioGroup aria-labelledby="interest-label" className="interest-options" value={value.interest} onValueChange={v=>set('interest',v as TripPreferences['interest'])}>{[{id:'Culture',icon:Compass},{id:'Nature',icon:Leaf},{id:'Food',icon:UtensilsCrossed}].map(p=><label key={p.id} className={value.interest===p.id?'chosen':''}><RadioGroupItem value={p.id}/><p.icon size={15}/>{p.id}</label>)}</RadioGroup>
+ <button className="primary-cta" type="submit"><Sparkles size={18}/>Create my journey<ArrowUpRight size={20}/></button>
+ <p className="form-disclaimer">Explore three curated destinations. This interactive demo uses sample plans and estimates.</p>
+</form>}
+
