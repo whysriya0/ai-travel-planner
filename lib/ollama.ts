@@ -1,14 +1,20 @@
 import { z } from 'zod';
-import { type Itinerary, type ItineraryRequest, type DayWeather } from './types';
+import { type Itinerary, type ItineraryRequest, type DayWeather, type AgentTraceEvent } from './types';
 import { searchPlaces, type PlaceSearchResult } from './places';
 import { getWeather } from './weather';
 import { getDistanceTime } from './distance';
 import { fetchJson, TravelError } from './http';
 
-export type ChatMessage = {role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_name?: string; tool_calls?: Array<{function: {name: string; arguments: unknown}}>};
+export type ChatMessage = {role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_name?: string; tool_call_id?: string; tool_calls?: Array<{id?: string; function: {name: string; arguments: unknown}}>};
 type ChatResponse = {message?: ChatMessage};
-export type AgentResult = {itinerary: Itinerary; source: 'ollama'; model: string; warnings: string[]; toolsUsed: string[]};
-export const modelName = () => process.env.OLLAMA_MODEL || 'qwen2.5:3b';
+export type AgentBackend = 'omniroute' | 'ollama';
+export type AgentResult = {itinerary: Itinerary; source: AgentBackend; backend: AgentBackend; model: string; warnings: string[]; toolsUsed: string[]; trace: AgentTraceEvent[]};
+export const backendName = (): AgentBackend => {
+  if (process.env.AI_BACKEND === 'ollama') return 'ollama';
+  if (process.env.AI_BACKEND === 'omniroute') return 'omniroute';
+  return process.env.OMNIROUTE_URL ? 'omniroute' : 'ollama';
+};
+export const modelName = () => backendName() === 'omniroute' ? (process.env.OMNIROUTE_MODEL || 'azure/gpt-6-astra') : (process.env.OLLAMA_MODEL || 'qwen2.5:3b');
 const fields = (properties: Record<string, unknown>) => ({type: 'object', properties, required: Object.keys(properties), additionalProperties: false});
 export const toolSchemas = [
   {type: 'function', function: {name: 'search_places', description: 'Find activities in the requested destination, for example museums or parks. The server supplies the city. Use returned placeId values.', parameters: fields({query: {type: 'string'}})}},
@@ -16,7 +22,27 @@ export const toolSchemas = [
   {type: 'function', function: {name: 'get_distance_time', description: 'Get driving minutes between two verified places. Copy the exact placeId values from the provided places.', parameters: fields({fromPlaceId: {type:'string'}, toPlaceId: {type:'string'}})}}
 ];
 const planJsonSchema = {type:'object',properties:{stops:{type:'array',items:{type:'object',properties:{placeId:{type:'string'},day:{type:'integer'},category:{type:'string'},estimatedCost:{type:'number'},reason:{type:'string'}},required:['placeId','day','category','estimatedCost','reason']}}},required:['stops']};
+function openAiMessages(messages: ChatMessage[]) {
+  return messages.map(message => {
+    if (message.role === 'assistant') return {role: message.role, content: message.content || null, ...(message.tool_calls ? {tool_calls: message.tool_calls.map((call, index) => ({id: call.id || `call-${index}`, type: 'function', function: {name: call.function.name, arguments: typeof call.function.arguments === 'string' ? call.function.arguments : JSON.stringify(call.function.arguments)}}))} : {})};
+    if (message.role === 'tool') return {role: message.role, tool_call_id: message.tool_call_id || `tool-${message.tool_name || 'call'}`, content: message.content};
+    return {role: message.role, content: message.content};
+  });
+}
+
 export async function callOllama(messages: ChatMessage[], finalize = false): Promise<ChatResponse> {
+  if (backendName() === 'omniroute') {
+    const base = (process.env.OMNIROUTE_URL || 'http://127.0.0.1:20128').replace(/\/$/, '');
+    const apiKey = process.env.OMNIROUTE_API_KEY || 'sk_omniroute';
+    const tokenLimit = /astra/i.test(modelName()) ? {max_completion_tokens: 2400} : {max_tokens: 2400};
+    const payload = await fetchJson<{choices?: Array<{message?: ChatMessage}>}>(`${base}/v1/chat/completions`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`},
+      body: JSON.stringify({model: modelName(), messages: openAiMessages(messages), ...(finalize ? {response_format: {type: 'json_object'}} : {tools: toolSchemas, tool_choice: 'auto'}), stream: false, temperature: 0.1, ...tokenLimit})
+    }, 120000);
+    const message = payload.choices?.[0]?.message;
+    if (!message) throw new TravelError('OmniRoute returned no assistant message. Check its connected provider and model.', 502);
+    return {message: {...message, content: message.content || '', tool_calls: message.tool_calls?.map((call, index) => ({...call, id: call.id || `call-${index}`}))}};
+  }
   return fetchJson<ChatResponse>((process.env.OLLAMA_URL || 'http://127.0.0.1:11434') + '/api/chat', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({model: modelName(), messages, ...(finalize ? {format:planJsonSchema} : {tools:toolSchemas}), stream: false, options: {temperature: 0.1, num_ctx: 8192, num_predict: 2400}})
@@ -32,10 +58,15 @@ const errorText = (error: unknown) => error instanceof z.ZodError ? error.issues
 
 export async function generateItinerary(input: ItineraryRequest, overrides: Partial<Dependencies> = {}): Promise<AgentResult> {
   const deps = {chat: callOllama, places: searchPlaces, weather: getWeather, distance: getDistanceTime, ...overrides};
+  const trace: AgentTraceEvent[] = [];
+  const log = (agent: AgentTraceEvent['agent'], action: string, detail: string, status: AgentTraceEvent['status'] = 'complete') => trace.push({agent, action, detail, status, timestamp: Date.now()});
+  log('Supervisor', 'start', `Planning ${input.days} day${input.days === 1 ? '' : 's'} in ${input.destination}.`, 'running');
+  log('Local Expert', 'delegate', 'Finding real activities that match the destination and interests.', 'running');
   const known = new Map<string, PlaceSearchResult>();
   const remember = (places: PlaceSearchResult[]) => {for (const place of places) known.set(place.placeId, place); return places;};
   const initial = remember(await deps.places('things to do', input.destination));
   if (!initial.length) throw new TravelError('No places found. Try a specific city and country.', 422);
+  log('Local Expert', 'search_places', `Found ${initial.length} verified activities for ${input.destination}.`);
   let weather: DayWeather[] = [];
   let weatherAttempted = false;
   let routeAttempted = false;
@@ -63,7 +94,10 @@ export async function generateItinerary(input: ItineraryRequest, overrides: Part
           switch (call.function.name) {
             case 'search_places': {
               const parsed = z.object({query:z.string().trim().min(2).max(120)}).strict().parse(args);
-              value = remember(await deps.places(parsed.query, input.destination)); break;
+              const places = remember(await deps.places(parsed.query, input.destination));
+              value = places;
+              log('Tool', 'search_places', `${parsed.query} returned ${places.length} verified places.`);
+              break;
             }
             case 'get_weather': {
               z.object({}).strict().parse(args);
@@ -87,8 +121,10 @@ export async function generateItinerary(input: ItineraryRequest, overrides: Part
           const detail = errorText(error);
           value = {error: detail};
           warnings.add(call.function.name + ': ' + detail);
+          log('Tool', call.function.name, detail, 'error');
         }
-        messages.push({role: 'tool', tool_name: call.function.name, content: JSON.stringify(value)});
+        log('Tool', call.function.name, `Completed ${call.function.name}.`);
+        messages.push({role: 'tool', tool_name: call.function.name, tool_call_id: call.id, content: JSON.stringify(value)});
       }
       messages.push({role:'user',content:!weatherAttempted?'Next call get_weather with {}.':!routeAttempted?'Next call get_distance_time with fromPlaceId "'+initial[0].placeId+'" and toPlaceId "'+(initial[1]||initial[0]).placeId+'".':'Required tools are complete. Now return only the final itinerary JSON using the verified place IDs.'});
       continue;
@@ -123,8 +159,11 @@ export async function generateItinerary(input: ItineraryRequest, overrides: Part
         }catch{warnings.add('Driving route unavailable between '+from.name+' and '+to.name+'.');}
       }
       if (!weather.length) warnings.add('Weather could not be verified. Check the forecast before departure.');
-      return {itinerary: {destination: input.destination, days: input.days, stops, weather, totalEstimatedCost: total,legs}, source: 'ollama', model: modelName(), warnings: [...warnings], toolsUsed: [...used]};
+      log('Supervisor', 'assemble', `Assembled ${stops.length} stops across ${input.days} day${input.days === 1 ? '' : 's'}.`);
+      log('Supervisor', 'complete', 'Verified itinerary ready for Roam.');
+      return {itinerary: {destination: input.destination, days: input.days, stops, weather, totalEstimatedCost: total,legs}, source: backendName(), backend: backendName(), model: modelName(), warnings: [...warnings], toolsUsed: [...used], trace};
     } catch (error) {
+      log('Supervisor', 'retry', errorText(error), 'error');
       messages.push({role: 'user', content: 'Please correct your response: ' + errorText(error) + ' Return the required JSON after any needed tools.'});
     }
   }

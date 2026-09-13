@@ -163,6 +163,21 @@ The backend tests use mocked providers to cover retries, invented IDs, tool erro
 
 Provider references: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [Google Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search), [Open-Meteo](https://open-meteo.com/en/docs), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). Public weather/routing services have usage limits; replace demo routing with an appropriate production service before wider release.
 
+### OmniRoute + Astra
+
+Roam can use [OmniRoute](https://github.com/diegosouzapw/OmniRoute) as its AI gateway. OmniRoute documents a local OpenAI-compatible endpoint at `http://localhost:20128/v1`, zero-credential local startup, and a dashboard flow for connecting a free provider. The project does not publish private provider keys, so no key can be safely copied from its repository. Connect a provider in the OmniRoute dashboard, then copy its endpoint key into `.env.local`.
+
+Set these values for the Astra route:
+
+```env
+AI_BACKEND=omniroute
+OMNIROUTE_URL=http://localhost:20128
+OMNIROUTE_API_KEY=sk_omniroute
+OMNIROUTE_MODEL=azure/gpt-6-astra
+```
+
+Start OmniRoute separately with `npx omniroute@latest` or its Docker image, open `http://localhost:20128`, connect the provider that exposes Astra, and restart Roam. The adapter uses `/v1/chat/completions`, sends `max_completion_tokens` for Astra, preserves tool calls, and keeps the key server-side. If `AI_BACKEND=ollama`, Roam continues using the local qwen model instead. The Phase 1 `/api/plan` route and the travel brief both return the same Supervisor → Local Expert → tools trace.
+
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)

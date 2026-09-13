@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { itineraryRequestSchema, placesRequestSchema, weatherRequestSchema, coordinateSchema } from './types';
-import { generateItinerary, modelName } from './ollama';
+import { backendName, generateItinerary, modelName } from './ollama';
 import { searchPlaces } from './places';
 import { getWeather } from './weather';
 import { getDistanceTime } from './distance';
@@ -13,14 +13,21 @@ export async function handleApi(request: Request): Promise<Response> {
   try {
     if (path === '/api/health' && request.method === 'GET') {
       let modelInstalled = false;
-      let ollamaReachable = false;
+      let providerReachable = false;
       try {
-        const tags = await fetchJson<{models?: Array<{name: string}>}>((process.env.OLLAMA_URL || 'http://127.0.0.1:11434') + '/api/tags', {}, 3000);
-        ollamaReachable = true;
-        modelInstalled = Boolean(tags.models?.some(model => model.name === modelName()));
+        if (backendName() === 'omniroute') {
+          const base = (process.env.OMNIROUTE_URL || 'http://127.0.0.1:20128').replace(/\/$/, '');
+          const models = await fetchJson<{data?: Array<{id: string}>}>(`${base}/v1/models`, {headers: {Authorization: `Bearer ${process.env.OMNIROUTE_API_KEY || 'sk_omniroute'}`}}, 3000);
+          providerReachable = true;
+          modelInstalled = Boolean(models.data?.some(model => model.id === modelName()));
+        } else {
+          const tags = await fetchJson<{models?: Array<{name: string}>}>((process.env.OLLAMA_URL || 'http://127.0.0.1:11434') + '/api/tags', {}, 3000);
+          providerReachable = true;
+          modelInstalled = Boolean(tags.models?.some(model => model.name === modelName()));
+        }
       } catch { /* Report readiness without leaking configuration. */ }
       const placesConfigured = Boolean(process.env.GOOGLE_MAPS_API_KEY);
-      return json({ready: modelInstalled && placesConfigured, ollamaReachable, model: modelName(), modelInstalled, placesConfigured, weather: 'Open-Meteo', routing: 'OSRM driving'});
+      return json({ready: modelInstalled && placesConfigured, backend: backendName(), providerReachable, model: modelName(), modelInstalled, placesConfigured, weather: 'Open-Meteo', routing: 'OSRM driving'});
     }
     if (!['/api/itinerary', '/api/places', '/api/weather', '/api/distance'].includes(path)) return json({error: 'API route not found.'}, 404);
     if (request.method !== 'POST') return json({error: 'Use POST for this endpoint.'}, 405);

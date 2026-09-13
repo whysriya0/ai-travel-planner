@@ -23,3 +23,10 @@ export type ItineraryStop = z.infer<typeof itineraryStopSchema>;
 export type DayWeather = z.infer<typeof dayWeatherSchema>;
 export type Itinerary = z.infer<typeof itinerarySchema>;
 export type ItineraryRequest = z.infer<typeof itineraryRequestSchema>;
+export type AgentTraceEvent = {
+  agent: 'Supervisor' | 'Local Expert' | 'Tool';
+  action: string;
+  detail: string;
+  timestamp: number;
+  status?: 'running' | 'complete' | 'error';
+};

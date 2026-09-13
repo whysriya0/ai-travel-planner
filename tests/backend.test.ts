@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateItinerary, type ChatMessage} from '../lib/ollama';
+import {callOllama,generateItinerary, type ChatMessage} from '../lib/ollama';
 import {handleApi} from '../lib/api';
 import {getWeather} from '../lib/weather';
 import {getDistanceTime} from '../lib/distance';
@@ -87,4 +87,13 @@ test('final itinerary includes the driving leg for the selected activity order',
  plan.stops.push({...plan.stops[0],placeId:'real-2',category:'outdoors'});response.content=JSON.stringify(plan);
  const result=await generateItinerary(input,{...deps,chat:chatSequence([tools,response])});
  assert.deepEqual(result.itinerary.legs,[{fromId:'stop-1',toId:'stop-2',durationMinutes:5,distanceKm:1,provider:'osrm',mode:'driving'}]);
+});
+test('OmniRoute uses the OpenAI-compatible Astra path without exposing a provider key',async()=>{
+ const originalFetch=globalThis.fetch;
+ const prior={backend:process.env.AI_BACKEND,url:process.env.OMNIROUTE_URL,key:process.env.OMNIROUTE_API_KEY,model:process.env.OMNIROUTE_MODEL};
+ process.env.AI_BACKEND='omniroute';process.env.OMNIROUTE_URL='http://omniroute.test';process.env.OMNIROUTE_API_KEY='test-key';process.env.OMNIROUTE_MODEL='azure/gpt-6-astra';
+ let requestBody:Record<string,unknown>|undefined;let auth='';
+ globalThis.fetch=async(url,init)=>{assert.equal(String(url),'http://omniroute.test/v1/chat/completions');requestBody=JSON.parse(String(init?.body));auth=new Headers(init?.headers).get('Authorization')||'';return Response.json({choices:[{message:{role:'assistant',content:'{}'}}]});};
+ try{const result=await callOllama([{role:'user',content:'test'}]);assert.equal(result.message?.content,'{}');assert.equal(requestBody?.model,'azure/gpt-6-astra');assert.equal(requestBody?.max_completion_tokens,2400);assert.equal(requestBody?.max_tokens,undefined);assert.equal(auth,'Bearer test-key');}
+ finally{globalThis.fetch=originalFetch;for(const [name,value] of Object.entries(prior)){if(value===undefined)delete process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name]!];else process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name] as string]=value;}}
 });
