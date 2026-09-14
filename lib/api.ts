@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { itineraryRequestSchema, placesRequestSchema, weatherRequestSchema, coordinateSchema } from './types';
-import { backendName, generateItinerary, modelName } from './ollama';
+import { backendName, modelName } from './ollama';
+import { createItinerary } from './planner';
 import { searchPlaces } from './places';
 import { getWeather } from './weather';
 import { getDistanceTime } from './distance';
@@ -32,8 +33,8 @@ export async function handleApi(request: Request): Promise<Response> {
           modelInstalled = Boolean(tags.models?.some(model => model.name === modelName()));
         }
       } catch { /* Report readiness without leaking configuration. */ }
-      const placesConfigured = Boolean(process.env.GOOGLE_MAPS_API_KEY);
-      return json({ready: modelInstalled && placesConfigured, backend: backendName(), providerReachable, model: modelName(), modelInstalled, placesConfigured, redditConfigured:Boolean(process.env.REDDIT_CLIENT_ID&&process.env.REDDIT_CLIENT_SECRET),searchConfigured:Boolean(process.env.SEARCHAPI_API_KEY),financeConfigured:Boolean(process.env.PLAID_CLIENT_ID&&process.env.PLAID_SECRET),weather: 'Open-Meteo', routing: 'OSRM driving'});
+      const googlePlacesConfigured = Boolean(process.env.GOOGLE_MAPS_API_KEY);
+      return json({ready:true,planningMode:modelInstalled?'ai-agent':'live-public-data',backend:modelInstalled?backendName():'roam-guide',providerReachable,model:modelInstalled?modelName():'live public data',modelInstalled,placesConfigured:true,googlePlacesConfigured,placeFallback:'Wikipedia Nearby',redditConfigured:Boolean(process.env.REDDIT_CLIENT_ID&&process.env.REDDIT_CLIENT_SECRET),searchConfigured:Boolean(process.env.SEARCHAPI_API_KEY),financeConfigured:Boolean(process.env.PLAID_CLIENT_ID&&process.env.PLAID_SECRET),weather:'Open-Meteo',routing:'OSRM driving'});
     }
     if (!['/api/itinerary', '/api/plan', '/api/places', '/api/weather', '/api/distance', '/api/reddit', '/api/travel-search', '/api/finance/link-token', '/api/finance/estimate'].includes(path)) return json({error: 'API route not found.'}, 404);
     if (request.method !== 'POST') return json({error: 'Use POST for this endpoint.'}, 405);
@@ -43,7 +44,7 @@ export async function handleApi(request: Request): Promise<Response> {
       const input = itineraryRequestSchema.parse(body);
       if (planning) return json({error: 'Roam is already planning a trip. Please wait for it to finish.'}, 429);
       planning = true;
-      try { return json(await generateItinerary(input)); } finally { planning = false; }
+      try { return json(await createItinerary(input)); } finally { planning = false; }
     }
     if (path === '/api/plan') {
       const input = phaseOnePlanSchema.parse(body);

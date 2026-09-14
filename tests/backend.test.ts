@@ -9,6 +9,7 @@ import {fetchJson, TravelError} from '../lib/http';
 import {itineraryRequestSchema} from '../lib/types';
 import {searchHotels} from '../lib/searchapi';
 import {estimateFromPlaid} from '../lib/finance';
+import {generatePublicItinerary} from '../lib/public-planner';
 
 const date = new Date().toISOString().slice(0,10);
 const input = {destination:'Paris, France',startDate:date,days:1,budget:100,travelers:2,interests:'Art'};
@@ -64,9 +65,22 @@ test('future forecasts and impossible coordinates fail before any network call',
  await assert.rejects(getWeather(48,2,'2099-01-01',1),/16 days/);
  await assert.rejects(getDistanceTime({lat:91,lng:2},{lat:48,lng:2}));
 });
-test('missing Google key produces a setup error instead of made-up places',async()=>{
- const prior=process.env.GOOGLE_MAPS_API_KEY;delete process.env.GOOGLE_MAPS_API_KEY;
- try{await assert.rejects(searchPlaces('museums','Paris'),/GOOGLE_MAPS_API_KEY/);}finally{if(prior)process.env.GOOGLE_MAPS_API_KEY=prior;}
+test('missing Google key falls back to live geocoding and Wikipedia nearby places',async()=>{
+ const original=globalThis.fetch,prior=process.env.GOOGLE_MAPS_API_KEY;delete process.env.GOOGLE_MAPS_API_KEY;
+ globalThis.fetch=async url=>String(url).includes('geocoding-api.open-meteo.com')?Response.json({results:[{id:1,name:'Paris',latitude:48.85,longitude:2.35}]}):Response.json({query:{geosearch:[{pageid:10,title:'A real landmark',lat:48.86,lon:2.34,dist:200}]}});
+ try{const result=await searchPlaces('museums','Paris');assert.equal(result[0].placeId,'wikipedia:10');assert.equal(result[0].provider,'wikipedia');}
+ finally{globalThis.fetch=original;if(prior)process.env.GOOGLE_MAPS_API_KEY=prior;}
+});
+test('public place discovery removes incident pages and keeps useful descriptions',async()=>{
+ const original=globalThis.fetch,prior=process.env.GOOGLE_MAPS_API_KEY;delete process.env.GOOGLE_MAPS_API_KEY;
+ globalThis.fetch=async url=>{
+  const value=String(url);
+  if(value.includes('geocoding-api.open-meteo.com'))return Response.json({results:[{id:1,name:'Paris',latitude:48.85,longitude:2.35}]});
+  if(value.includes('pageids='))return Response.json({query:{pages:{'10':{pageid:10,title:'City Garden',description:'Historic public garden in Paris'},'11':{pageid:11,title:'City bombing attempt',description:'Failed bombing attack'}}}});
+  return Response.json({query:{geosearch:[{pageid:10,title:'City Garden',lat:48.86,lon:2.34,dist:200},{pageid:11,title:'City bombing attempt',lat:48.861,lon:2.341,dist:220}]}});
+ };
+ try{const result=await searchPlaces('parks','Paris');assert.deepEqual(result.map(place=>place.name),['City Garden']);assert.equal(result[0].description,'Historic public garden in Paris');}
+ finally{globalThis.fetch=original;if(prior)process.env.GOOGLE_MAPS_API_KEY=prior;}
 });
 test('provider timeout is converted to a safe actionable error',async()=>{
  const original=globalThis.fetch;
@@ -90,6 +104,12 @@ test('final itinerary includes the driving leg for the selected activity order',
  plan.stops.push({...plan.stops[0],placeId:'real-2',category:'outdoors'});response.content=JSON.stringify(plan);
  const result=await generateItinerary(input,{...deps,chat:chatSequence([tools,response])});
  assert.deepEqual(result.itinerary.legs,[{fromId:'stop-1',toId:'stop-2',durationMinutes:5,distanceKm:1,provider:'osrm',mode:'driving'}]);
+});
+test('public planner covers every requested day and stays inside the group budget',async()=>{
+ const publicPlaces=Array.from({length:9},(_,index)=>({placeId:`wiki-${index}`,name:`Landmark ${index+1}`,lat:48.85+index/1000,lng:2.35+index/1000,description:'A documented local landmark.'}));
+ const result=await generatePublicItinerary({...input,days:3,budget:90},{places:async()=>publicPlaces,weather:async()=>[],distance:async()=>({durationMinutes:8,distanceKm:1.2,provider:'osrm' as const,mode:'driving' as const})});
+ assert.deepEqual([...new Set(result.itinerary.stops.map(stop=>stop.day))],[1,2,3]);
+ assert.ok(result.itinerary.totalEstimatedCost<=90);assert.equal(result.backend,'roam-guide');assert.equal(result.itinerary.legs?.length,6);
 });
 test('OmniRoute uses the OpenAI-compatible Astra path without exposing a provider key',async()=>{
  const originalFetch=globalThis.fetch;

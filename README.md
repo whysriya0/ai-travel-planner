@@ -122,7 +122,7 @@ The portable build runs Vinext directly without a host `timeout` command. The ma
 
 ## Roam local agent
 
-The homepage and illustrated story map are a UI preview. Live planning runs on the demo computer with Ollama; the hosted Sites URL cannot reach a laptop's localhost.
+The hosted Site includes a credential-free live planner. It resolves destinations with Open-Meteo, discovers nearby documented places with Wikipedia, adds available weather, and builds driving legs with OSRM. Google Places and OmniRoute/Astra automatically enrich the same flow when configured; they are no longer required for a user to receive an itinerary.
 
 ### Run the complete local demo
 
@@ -134,7 +134,7 @@ ollama pull qwen2.5:3b
 npm run dev:local
 ```
 
-Copy the env template only if `.env.local` does not already exist. Set `GOOGLE_MAPS_API_KEY` there privately, enable **Places API (New)** in that Google Cloud project, and restart the local app. The key remains on the server and is excluded from Git. Google requires its own project/billing configuration.
+Copy the env template only if `.env.local` does not already exist. A Google Places key is optional: when present, enable **Places API (New)** in that Google Cloud project and restart the local app. The key remains on the server and is excluded from Git.
 
 Open **http://127.0.0.1:5173** → Start planning → enter a city and country, dates, days, travelers and budget → Ask the Roam agent. Generated activities, explanations, estimates, forecasts, and an interactive coordinate-fitted route map appear in the brief. The homepage diorama remains an illustrative sample.
 
@@ -142,13 +142,13 @@ Open **http://127.0.0.1:5173** → Start planning → enter a city and country, 
 
 ### Connected tools and behavior
 
-- **search_places**: Google Places Text Search (New), with a minimal field mask. Missing credentials produce a setup error; no fabricated places or silently relabeled sample.
+- **search_places**: Google Places Text Search (New) when configured; otherwise Open-Meteo geocoding plus Wikipedia Nearby provides real names and coordinates without blocking the trip.
 - **get_weather**: Open-Meteo daily temperatures, precipitation probability and weather codes. Trips outside the available forecast window receive an explicit availability note.
 - **get_distance_time**: OSRM public demo routing, driving only. These are road estimates, not walking, transit or live traffic data.
 - Zod validates requests, tool arguments, provider responses and final plans. Every returned place ID must come from a lookup. Names and coordinates are supplied by the server; activity totals are recalculated per traveler.
 - The tool loop allows six model responses, up to four tools per response, per-provider timeouts and a six-minute deadline checked between rounds. Invalid JSON and invalid plans get correction attempts. Failed tools appear as warnings; exhausted planning returns an error.
 - Only one local planning request runs at a time. The local server checks host/origin and limits request bodies.
-- Activity costs are AI estimates in USD. Flight and hotel cards use current SearchApi results when configured, while hotel ordering combines rating, review volume, and nightly price. Prices and availability can change before booking. The generated route view plots verified coordinates and links to Google Maps; direct booking, group consensus, and map-tile navigation are not implemented yet.
+- Activity costs are bounded planning estimates in USD. Flight and hotel cards use current SearchApi results when configured, while hotel ordering combines rating, review volume, and nightly price. Prices and availability can change before booking. The generated route view plots provider coordinates and links to Google Maps.
 - Reddit suggestions use Reddit's OAuth API and link back to the original discussion. They are displayed as community opinions, kept separate from verified place and price data.
 - The optional Plaid sandbox flow exchanges the temporary public token server-side, calculates a bounded summary from 90 days of consented transactions and available credit, and discards the access token. Roam does not retrieve or infer a credit score, and raw transactions are never sent to the itinerary agent.
 
@@ -173,9 +173,9 @@ npm run test:backend
 node scripts/smoke-ollama.mjs
 ```
 
-The backend tests use mocked providers to cover retries, invented IDs, tool errors, costs, invalid input and timeouts. The optional smoke test uses **live Ollama, weather and routing with explicitly labeled place fixtures**; it does not verify Google Places. A real Places key is required to verify generation end to end with live places.
+The backend tests use mocked providers to cover retries, invented IDs, tool errors, costs, invalid input, timeouts, public-place fallback, day coverage, and budget enforcement. The optional smoke test checks the locally configured model path.
 
-Provider references: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [Google Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search), [Open-Meteo](https://open-meteo.com/en/docs), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). Public weather/routing services have usage limits; replace demo routing with an appropriate production service before wider release.
+Provider references: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [Google Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search), [Open-Meteo geocoding](https://open-meteo.com/en/docs/geocoding-api), [Wikipedia geosearch](https://www.mediawiki.org/wiki/API:Geosearch), [Open-Meteo weather](https://open-meteo.com/en/docs), [OSRM](https://project-osrm.org/docs/v5.24.0/api/). Public services have usage limits; use production plans or self-hosted equivalents before wider release.
 
 ### OmniRoute + Astra
 

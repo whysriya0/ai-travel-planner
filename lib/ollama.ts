@@ -7,9 +7,10 @@ import { fetchJson, TravelError } from './http';
 
 export type ChatMessage = {role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_name?: string; tool_call_id?: string; tool_calls?: Array<{id?: string; function: {name: string; arguments: unknown}}>};
 type ChatResponse = {message?: ChatMessage};
-export type AgentBackend = 'omniroute' | 'ollama';
+export type ModelBackend = 'omniroute' | 'ollama';
+export type AgentBackend = ModelBackend | 'roam-guide';
 export type AgentResult = {itinerary: Itinerary; source: AgentBackend; backend: AgentBackend; model: string; warnings: string[]; toolsUsed: string[]; trace: AgentTraceEvent[]};
-export const backendName = (): AgentBackend => {
+export const backendName = (): ModelBackend => {
   if (process.env.AI_BACKEND === 'ollama') return 'ollama';
   if (process.env.AI_BACKEND === 'omniroute') return 'omniroute';
   return process.env.OMNIROUTE_URL ? 'omniroute' : 'ollama';
@@ -169,3 +170,4 @@ export async function generateItinerary(input: ItineraryRequest, overrides: Part
   }
   throw new TravelError('The agent could not produce a verified itinerary after several attempts. Try a shorter, more specific trip.', 502);
 }
+
