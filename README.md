@@ -148,11 +148,25 @@ Open **http://127.0.0.1:5173** → Start planning → enter a city and country, 
 - Zod validates requests, tool arguments, provider responses and final plans. Every returned place ID must come from a lookup. Names and coordinates are supplied by the server; activity totals are recalculated per traveler.
 - The tool loop allows six model responses, up to four tools per response, per-provider timeouts and a six-minute deadline checked between rounds. Invalid JSON and invalid plans get correction attempts. Failed tools appear as warnings; exhausted planning returns an error.
 - Only one local planning request runs at a time. The local server checks host/origin and limits request bodies.
-- Costs are AI activity estimates in USD, excluding flights and accommodation. Prices, opening hours, availability and bookings are not verified. The generated route view plots verified coordinates and links to Google Maps; Plaid, booking, group consensus, and map-tile navigation are not implemented yet.
+- Activity costs are AI estimates in USD. Flight and hotel cards use current SearchApi results when configured, while hotel ordering combines rating, review volume, and nightly price. Prices and availability can change before booking. The generated route view plots verified coordinates and links to Google Maps; direct booking, group consensus, and map-tile navigation are not implemented yet.
+- Reddit suggestions use Reddit's OAuth API and link back to the original discussion. They are displayed as community opinions, kept separate from verified place and price data.
+- The optional Plaid sandbox flow exchanges the temporary public token server-side, calculates a bounded summary from 90 days of consented transactions and available credit, and discards the access token. Roam does not retrieve or infer a credit score, and raw transactions are never sent to the itinerary agent.
 
 ### API and verification
 
-`GET /api/health` reports Ollama/model availability and whether Places is configured, without exposing secrets. `POST /api/itinerary` accepts destination, startDate (YYYY-MM-DD), days (1–14), budget, travelers and optional interests. Standalone POST routes also exist at `/api/places`, `/api/weather`, and `/api/distance`.
+`GET /api/health` reports AI and provider readiness without exposing secrets. `POST /api/itinerary` accepts destination, startDate (YYYY-MM-DD), days (1–14), budget, travelers and optional interests. Standalone POST routes also exist at `/api/places`, `/api/weather`, `/api/distance`, `/api/reddit`, `/api/travel-search`, `/api/finance/link-token`, and `/api/finance/estimate`.
+
+Add these server-only credentials to enable the new research layer:
+
+```env
+SEARCHAPI_API_KEY=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_USER_AGENT=roam-travel-planner/1.0
+PLAID_CLIENT_ID=
+PLAID_SECRET=
+PLAID_ENV=sandbox
+```
 
 ```powershell
 npm run test:backend

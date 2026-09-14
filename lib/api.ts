@@ -6,9 +6,13 @@ import { getWeather } from './weather';
 import { getDistanceTime } from './distance';
 import { fetchJson, TravelError } from './http';
 import { supervisor } from './agents/supervisor';
+import { searchRedditTravel } from './reddit';
+import { searchFlights, searchHotels } from './searchapi';
+import { createPlaidLinkToken, estimateFromPlaid } from './finance';
 
 let planning = false;
 const phaseOnePlanSchema = z.object({destination: z.string().trim().min(2).max(120), days: z.coerce.number().int().min(1).max(14), interests: z.string().trim().max(600).optional(), startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()});
+const travelSearchSchema = z.object({origin:z.string().trim().min(2).max(120),destination:z.string().trim().min(2).max(120),startDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),days:z.number().int().min(1).max(30),travelers:z.number().int().min(1).max(9),budget:z.number().positive().max(10000000),currency:z.string().regex(/^[A-Z]{3}$/).default('USD')});
 export async function handleApi(request: Request): Promise<Response> {
   const path = new URL(request.url).pathname;
   const json = (data: unknown, status = 200) => Response.json(data, {status, headers: {'Cache-Control': 'no-store'}});
@@ -29,9 +33,9 @@ export async function handleApi(request: Request): Promise<Response> {
         }
       } catch { /* Report readiness without leaking configuration. */ }
       const placesConfigured = Boolean(process.env.GOOGLE_MAPS_API_KEY);
-      return json({ready: modelInstalled && placesConfigured, backend: backendName(), providerReachable, model: modelName(), modelInstalled, placesConfigured, weather: 'Open-Meteo', routing: 'OSRM driving'});
+      return json({ready: modelInstalled && placesConfigured, backend: backendName(), providerReachable, model: modelName(), modelInstalled, placesConfigured, redditConfigured:Boolean(process.env.REDDIT_CLIENT_ID&&process.env.REDDIT_CLIENT_SECRET),searchConfigured:Boolean(process.env.SEARCHAPI_API_KEY),financeConfigured:Boolean(process.env.PLAID_CLIENT_ID&&process.env.PLAID_SECRET),weather: 'Open-Meteo', routing: 'OSRM driving'});
     }
-    if (!['/api/itinerary', '/api/plan', '/api/places', '/api/weather', '/api/distance'].includes(path)) return json({error: 'API route not found.'}, 404);
+    if (!['/api/itinerary', '/api/plan', '/api/places', '/api/weather', '/api/distance', '/api/reddit', '/api/travel-search', '/api/finance/link-token', '/api/finance/estimate'].includes(path)) return json({error: 'API route not found.'}, 404);
     if (request.method !== 'POST') return json({error: 'Use POST for this endpoint.'}, 405);
     let body: unknown;
     try { body = await request.json(); } catch { return json({error: 'Send a valid JSON request.'}, 400); }
@@ -54,6 +58,23 @@ export async function handleApi(request: Request): Promise<Response> {
     if (path === '/api/weather') {
       const input = weatherRequestSchema.parse(body);
       return json({weather: await getWeather(input.lat, input.lng, input.startDate, input.days)});
+    }
+    if (path === '/api/reddit') {
+      const input=z.object({destination:z.string().trim().min(2).max(120),interests:z.string().trim().max(600).default('')}).parse(body);
+      return json({suggestions:await searchRedditTravel(input.destination,input.interests)});
+    }
+    if (path === '/api/travel-search') {
+      const input=travelSearchSchema.parse(body);
+      const [flights,hotels]=await Promise.all([searchFlights(input),searchHotels(input)]);
+      return json({flights,hotels,source:'SearchApi'});
+    }
+    if (path === '/api/finance/link-token') {
+      const input=z.object({clientUserId:z.string().min(8).max(100)}).parse(body);
+      return json(await createPlaidLinkToken(input.clientUserId));
+    }
+    if (path === '/api/finance/estimate') {
+      const input=z.object({publicToken:z.string().min(8),days:z.number().int().min(1).max(30),budget:z.number().positive().max(10000000)}).parse(body);
+      return json({estimate:await estimateFromPlaid(input.publicToken,input.days,input.budget)});
     }
     const input = z.object({origin: coordinateSchema, destination: coordinateSchema}).parse(body);
     return json(await getDistanceTime(input.origin, input.destination));

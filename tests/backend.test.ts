@@ -7,6 +7,8 @@ import {getDistanceTime} from '../lib/distance';
 import {searchPlaces} from '../lib/places';
 import {fetchJson, TravelError} from '../lib/http';
 import {itineraryRequestSchema} from '../lib/types';
+import {searchHotels} from '../lib/searchapi';
+import {estimateFromPlaid} from '../lib/finance';
 
 const date = new Date().toISOString().slice(0,10);
 const input = {destination:'Paris, France',startDate:date,days:1,budget:100,travelers:2,interests:'Art'};
@@ -97,5 +99,20 @@ test('OmniRoute uses the OpenAI-compatible Astra path without exposing a provide
  globalThis.fetch=async(url,init)=>{assert.equal(String(url),'http://omniroute.test/v1/chat/completions');requestBody=JSON.parse(String(init?.body));auth=new Headers(init?.headers).get('Authorization')||'';return Response.json({choices:[{message:{role:'assistant',content:'{}'}}]});};
  try{const result=await callOllama([{role:'user',content:'test'}]);assert.equal(result.message?.content,'{}');assert.equal(requestBody?.model,'azure/gpt-6-astra');assert.equal(requestBody?.max_completion_tokens,2400);assert.equal(requestBody?.max_tokens,undefined);assert.equal(auth,'Bearer test-key');}
  finally{globalThis.fetch=originalFetch;for(const [name,value] of Object.entries(prior)){if(value===undefined)delete process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name]!];else process.env[{backend:'AI_BACKEND',url:'OMNIROUTE_URL',key:'OMNIROUTE_API_KEY',model:'OMNIROUTE_MODEL'}[name] as string]=value;}}
+});
+test('SearchApi hotel results are ranked by review quality and price value',async()=>{
+ const original=globalThis.fetch,prior=process.env.SEARCHAPI_API_KEY;process.env.SEARCHAPI_API_KEY='test-key';
+ globalThis.fetch=async()=>Response.json({search_parameters:{currency:'USD'},properties:[
+  {name:'Expensive Five',overall_rating:5,reviews:10,rate_per_night:{extracted_lowest:450}},
+  {name:'Loved Local',overall_rating:4.8,reviews:2400,rate_per_night:{extracted_lowest:150}}
+ ]});
+ try{const hotels=await searchHotels({destination:'Paris',startDate:date,days:3,travelers:2,budget:1800});assert.equal(hotels[0].name,'Loved Local');assert.equal(hotels[0].pricePerNight,150);}
+ finally{globalThis.fetch=original;if(prior)process.env.SEARCHAPI_API_KEY=prior;else delete process.env.SEARCHAPI_API_KEY;}
+});
+test('Plaid estimate returns only a bounded summary and never invents a credit score',async()=>{
+ const original=globalThis.fetch,priorId=process.env.PLAID_CLIENT_ID,priorSecret=process.env.PLAID_SECRET;process.env.PLAID_CLIENT_ID='id';process.env.PLAID_SECRET='secret';
+ globalThis.fetch=async url=>String(url).endsWith('/item/public_token/exchange')?Response.json({access_token:'access'}):String(url).endsWith('/transactions/get')?Response.json({transactions:[{amount:90,date,category:['Food'],pending:false},{amount:2000,date,category:['Rent'],pending:false}]}):Response.json({accounts:[{type:'credit',balances:{available:1200,current:300,limit:1500}}]});
+ try{const estimate=await estimateFromPlaid('public-token',5,2000);assert.equal(estimate.averageDailyDiscretionarySpend,1);assert.equal(estimate.recommendedTripSpend,100);assert.match(estimate.disclaimer,/does not retrieve or infer your credit score/);assert.equal('transactions' in estimate,false);}
+ finally{globalThis.fetch=original;if(priorId)process.env.PLAID_CLIENT_ID=priorId;else delete process.env.PLAID_CLIENT_ID;if(priorSecret)process.env.PLAID_SECRET=priorSecret;else delete process.env.PLAID_SECRET;}
 });
 
