@@ -26,7 +26,7 @@ const wikiHeaders = {
   'Api-User-Agent': 'RoamTravelPlannerBot/1.0 (https://github.com/whysriya0/ai-travel-planner)',
   Accept: 'application/json'
 };
-const unsafeTopic = /\b(attack|bomb(?:ing)?|massacre|murder|assassination|shooting|disaster|accident|crash|siege|riot|protest|pandemic|epidemic|election|campaign|battle|war|execution|victim|terror(?:ism|ist)?)\b/i;
+const unsafeTopic = /\b(attack|bomb(?:ing)?|massacre|murder|assassination|shooting|disaster|accident|crash|siege|riot|protest|pandemic|epidemic|election|campaign|battle|war|execution|victim|terror(?:ism|ist)?|locust)\b/i;
 const placeSignal = /\b(museum|gallery|park|garden|beach|mountain|lake|river|forest|trail|island|market|cafe|restaurant|bakery|square|plaza|promenade|district|quarter|neighbou?rhood|cathedral|church|temple|mosque|synagogue|palace|castle|fort|monument|memorial|tower|bridge|theatre|opera|zoo|aquarium|heritage|historic|landmark|architecture|attraction|waterfront|harbou?r)\b/i;
 
 function radians(value:number){return value*Math.PI/180;}
@@ -59,10 +59,13 @@ async function searchWikipediaNearby(location: string): Promise<PlaceSearchResul
   let details=new Map<number,z.infer<typeof wikiDetailSchema>>();
   if(pages.length){
     try{
-      const detailUrl=new URL('https://en.wikipedia.org/w/api.php');
-      Object.entries({action:'query',format:'json',pageids:pages.map(page=>page.pageid).join('|'),prop:'description|extracts|pageimages',exintro:'1',explaintext:'1',exchars:'280',piprop:'thumbnail',pithumbsize:'640',origin:'*'}).forEach(([key,value])=>detailUrl.searchParams.set(key,value));
-      const payload=z.object({query:z.object({pages:z.record(z.string(),wikiDetailSchema)}).optional()}).parse(await fetchJson<unknown>(detailUrl,{headers:wikiHeaders}));
-      details=new Map(Object.values(payload.query?.pages||{}).map(page=>[page.pageid,page]));
+      const chunks=Array.from({length:Math.ceil(pages.length/40)},(_,index)=>pages.slice(index*40,index*40+40));
+      const payloads=await Promise.all(chunks.map(async chunk=>{
+        const detailUrl=new URL('https://en.wikipedia.org/w/api.php');
+        Object.entries({action:'query',format:'json',pageids:chunk.map(page=>page.pageid).join('|'),prop:'description|extracts|pageimages',exintro:'1',explaintext:'1',exchars:'280',piprop:'thumbnail',pithumbsize:'640',origin:'*'}).forEach(([key,value])=>detailUrl.searchParams.set(key,value));
+        return z.object({query:z.object({pages:z.record(z.string(),wikiDetailSchema)}).optional()}).parse(await fetchJson<unknown>(detailUrl,{headers:wikiHeaders}));
+      }));
+      details=new Map(payloads.flatMap(payload=>Object.values(payload.query?.pages||{})).map(page=>[page.pageid,page]));
     }catch{/* Coordinates still allow a safe fallback when page summaries are unavailable. */}
   }
   const candidates=pages.map(page=>{

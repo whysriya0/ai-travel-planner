@@ -76,8 +76,8 @@ test('public place discovery removes incident pages and keeps useful description
  globalThis.fetch=async url=>{
   const value=String(url);
   if(value.includes('geocoding-api.open-meteo.com'))return Response.json({results:[{id:1,name:'Paris',latitude:48.85,longitude:2.35}]});
-  if(value.includes('pageids='))return Response.json({query:{pages:{'10':{pageid:10,title:'City Garden',description:'Historic public garden in Paris'},'11':{pageid:11,title:'City bombing attempt',description:'Failed bombing attack'}}}});
-  return Response.json({query:{geosearch:[{pageid:10,title:'City Garden',lat:48.86,lon:2.34,dist:200},{pageid:11,title:'City bombing attempt',lat:48.861,lon:2.341,dist:220}]}});
+  if(value.includes('pageids='))return Response.json({query:{pages:{'10':{pageid:10,title:'City Garden',description:'Historic public garden in Paris'},'11':{pageid:11,title:'City bombing attempt',description:'Failed bombing attack'},'12':{pageid:12,title:'Locust of City Garden',description:'Notable tree in a square'}}}});
+  return Response.json({query:{geosearch:[{pageid:10,title:'City Garden',lat:48.86,lon:2.34,dist:200},{pageid:11,title:'City bombing attempt',lat:48.861,lon:2.341,dist:220},{pageid:12,title:'Locust of City Garden',lat:48.862,lon:2.342,dist:240}]}});
  };
  try{const result=await searchPlaces('parks','Paris');assert.deepEqual(result.map(place=>place.name),['City Garden']);assert.equal(result[0].description,'Historic public garden in Paris');}
  finally{globalThis.fetch=original;if(prior)process.env.GOOGLE_MAPS_API_KEY=prior;}
