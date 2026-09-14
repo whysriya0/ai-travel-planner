@@ -4,7 +4,7 @@ import {callOllama,generateItinerary, type ChatMessage} from '../lib/ollama';
 import {handleApi} from '../lib/api';
 import {getWeather} from '../lib/weather';
 import {getDistanceTime} from '../lib/distance';
-import {searchPlaces} from '../lib/places';
+import {enrichWikipediaPlaces,searchPlaces} from '../lib/places';
 import {fetchJson, TravelError} from '../lib/http';
 import {itineraryRequestSchema} from '../lib/types';
 import {searchHotels} from '../lib/searchapi';
@@ -79,8 +79,14 @@ test('public place discovery removes incident pages and keeps useful description
   if(value.includes('pageids='))return Response.json({query:{pages:{'10':{pageid:10,title:'City Garden',description:'Historic public garden in Paris'},'11':{pageid:11,title:'City bombing attempt',description:'Failed bombing attack'},'12':{pageid:12,title:'Locust of City Garden',description:'Notable tree in a square'}}}});
   return Response.json({query:{geosearch:[{pageid:10,title:'City Garden',lat:48.86,lon:2.34,dist:200},{pageid:11,title:'City bombing attempt',lat:48.861,lon:2.341,dist:220},{pageid:12,title:'Locust of City Garden',lat:48.862,lon:2.342,dist:240}]}});
  };
- try{const result=await searchPlaces('parks','Paris');assert.deepEqual(result.map(place=>place.name),['City Garden']);assert.equal(result[0].description,'Historic public garden in Paris');}
+ try{const result=await searchPlaces('parks','Paris');assert.deepEqual(result.map(place=>place.name),['City Garden']);}
  finally{globalThis.fetch=original;if(prior)process.env.GOOGLE_MAPS_API_KEY=prior;}
+});
+test('selected Wikipedia places receive useful summary text without blocking on a failed page',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async url=>String(url).includes('City_Garden')?Response.json({description:'Historic public garden in Paris',extract:'Longer text'}):new Response('missing',{status:404});
+ try{const result=await enrichWikipediaPlaces([{placeId:'wikipedia:10',name:'City Garden',lat:48.86,lng:2.34,provider:'wikipedia'},{placeId:'wikipedia:11',name:'Missing Place',lat:48.87,lng:2.35,provider:'wikipedia'}]);assert.equal(result[0].description,'Historic public garden in Paris');assert.equal(result[1].name,'Missing Place');}
+ finally{globalThis.fetch=original;}
 });
 test('provider timeout is converted to a safe actionable error',async()=>{
  const original=globalThis.fetch;

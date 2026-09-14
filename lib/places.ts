@@ -16,9 +16,8 @@ const geocodingSchema = z.object({results: z.array(z.object({
 const wikiPageSchema = z.object({
   pageid: z.number(), title: z.string().min(1), lat: z.number(), lon: z.number(), dist: z.number().optional()
 });
-const wikiDetailSchema = z.object({
-  pageid: z.number(), title: z.string().min(1), description: z.string().optional(), extract: z.string().optional(),
-  thumbnail: z.object({source: z.string().url()}).optional()
+const wikiSummarySchema = z.object({
+  description: z.string().optional(), extract: z.string().optional(), thumbnail: z.object({source: z.string().url()}).optional()
 });
 
 const wikiHeaders = {
@@ -56,23 +55,10 @@ async function searchWikipediaNearby(location: string): Promise<PlaceSearchResul
     pages=payloads.flatMap(payload=>payload.query?.geosearch||[]).filter((page,index,all)=>all.findIndex(other=>other.pageid===page.pageid)===index);
   } catch (error) { throw new TravelError(`Nearby place lookup failed: ${error instanceof Error ? error.message : 'provider unavailable'}`); }
 
-  let details=new Map<number,z.infer<typeof wikiDetailSchema>>();
-  if(pages.length){
-    try{
-      const chunks=Array.from({length:Math.ceil(pages.length/40)},(_,index)=>pages.slice(index*40,index*40+40));
-      const payloads=await Promise.all(chunks.map(async chunk=>{
-        const detailUrl=new URL('https://en.wikipedia.org/w/api.php');
-        Object.entries({action:'query',format:'json',pageids:chunk.map(page=>page.pageid).join('|'),prop:'description|extracts|pageimages',exintro:'1',explaintext:'1',exchars:'280',piprop:'thumbnail',pithumbsize:'640',origin:'*'}).forEach(([key,value])=>detailUrl.searchParams.set(key,value));
-        return z.object({query:z.object({pages:z.record(z.string(),wikiDetailSchema)}).optional()}).parse(await fetchJson<unknown>(detailUrl,{headers:wikiHeaders}));
-      }));
-      details=new Map(payloads.flatMap(payload=>Object.values(payload.query?.pages||{})).map(page=>[page.pageid,page]));
-    }catch{/* Coordinates still allow a safe fallback when page summaries are unavailable. */}
-  }
   const candidates=pages.map(page=>{
-    const detail=details.get(page.pageid);const description=(detail?.description||detail?.extract||'').trim();
-    const text=`${page.title} ${description}`;const distance=distanceKm({lat:city.latitude,lon:city.longitude},{lat:page.lat,lon:page.lon});
-    const score=(placeSignal.test(text)?12:0)+(description?3:0)-Math.min(distance,15)/3;
-    return {name:page.title,placeId:`wikipedia:${page.pageid}`,lat:page.lat,lng:page.lon,provider:'wikipedia' as const,description:description||undefined,photoUrl:detail?.thumbnail?.source,score,text};
+    const text=page.title;const distance=distanceKm({lat:city.latitude,lon:city.longitude},{lat:page.lat,lon:page.lon});
+    const score=(placeSignal.test(text)?12:0)-Math.min(distance,15)/3;
+    return {name:page.title,placeId:`wikipedia:${page.pageid}`,lat:page.lat,lng:page.lon,provider:'wikipedia' as const,score,text};
   });
   const safe=candidates.filter(place=>!unsafeTopic.test(place.text));
   const preferred=safe.filter(place=>placeSignal.test(place.text)).sort((a,b)=>b.score-a.score);
@@ -80,6 +66,17 @@ async function searchWikipediaNearby(location: string): Promise<PlaceSearchResul
   const results=[...preferred,...remainder].slice(0,45).map(({score:_,text:__,...place})=>place);
   if (results.length) return results;
   return [{name: `${city.name} city centre`, placeId: `open-meteo:${city.id}`, lat: city.latitude, lng: city.longitude, provider: 'wikipedia'}];
+}
+
+export async function enrichWikipediaPlaces(places:PlaceSearchResult[]):Promise<PlaceSearchResult[]>{
+ const enriched=await Promise.allSettled(places.map(async place=>{
+  if(place.provider!=='wikipedia'||!place.placeId.startsWith('wikipedia:'))return place;
+  const title=encodeURIComponent(place.name.replace(/\s+/g,'_'));
+  const summary=wikiSummarySchema.parse(await fetchJson<unknown>(`https://en.wikipedia.org/api/rest_v1/page/summary/${title}`,{headers:wikiHeaders}));
+  const description=(summary.description||summary.extract||'').trim();
+  return {...place,description:description||place.description,photoUrl:summary.thumbnail?.source||place.photoUrl};
+ }));
+ return enriched.map((result,index)=>result.status==='fulfilled'?result.value:places[index]);
 }
 
 export async function searchPlaces(query: string, location: string): Promise<PlaceSearchResult[]> {

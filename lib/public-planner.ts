@@ -1,10 +1,10 @@
 import type {AgentResult} from './ollama';
-import {searchPlaces, type PlaceSearchResult} from './places';
+import {enrichWikipediaPlaces,searchPlaces, type PlaceSearchResult} from './places';
 import {getWeather} from './weather';
 import {getDistanceTime} from './distance';
 import type {AgentTraceEvent, DayWeather, Itinerary, ItineraryRequest} from './types';
 
-type PublicDependencies={places:typeof searchPlaces;weather:typeof getWeather;distance:typeof getDistanceTime};
+type PublicDependencies={places:typeof searchPlaces;enrich:typeof enrichWikipediaPlaces;weather:typeof getWeather;distance:typeof getDistanceTime};
 function categoryFor(place:PlaceSearchResult){
  const text=(place.name+' '+(place.description||'')).toLowerCase();
  if(/park|garden|beach|hill|mountain|lake|river|forest|trail|island/.test(text))return 'outdoors';
@@ -31,7 +31,7 @@ function reasonFor(place:PlaceSearchResult,interests:string,category:string){
 }
 
 export async function generatePublicItinerary(input:ItineraryRequest,overrides:Partial<PublicDependencies>={}):Promise<AgentResult>{
- const deps={places:searchPlaces,weather:getWeather,distance:getDistanceTime,...overrides};
+ const deps={places:searchPlaces,enrich:enrichWikipediaPlaces,weather:getWeather,distance:getDistanceTime,...overrides};
  const trace:AgentTraceEvent[]=[];
  const log=(agent:AgentTraceEvent['agent'],action:string,detail:string,status:AgentTraceEvent['status']='complete')=>trace.push({agent,action,detail,status,timestamp:Date.now()});
  log('Supervisor','start',`Building a live ${input.days}-day journey in ${input.destination}.`,'running');
@@ -40,7 +40,7 @@ export async function generatePublicItinerary(input:ItineraryRequest,overrides:P
  log('Local Expert','discover',`Found ${places.length} nearby places from live public data.`);
  const stopsPerDay=Math.min(3,Math.max(1,Math.floor(Math.min(places.length,input.days*3)/input.days)));
  const stopCount=stopsPerDay*input.days;
- const selectedPlaces=arrangePlaces(places,stopCount);
+ const selectedPlaces=await deps.enrich(arrangePlaces(places,stopCount));
  const maxPerPerson=Math.max(0,Math.floor(input.budget/input.travelers/stopCount));
  const baseCosts={culture:18,outdoors:4,rest:10,food:20};
  const stops=Array.from({length:stopCount},(_,index)=>{
