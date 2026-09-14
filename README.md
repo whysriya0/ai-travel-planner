@@ -136,7 +136,7 @@ npm run dev:local
 
 Copy the env template only if `.env.local` does not already exist. Set `GOOGLE_MAPS_API_KEY` there privately, enable **Places API (New)** in that Google Cloud project, and restart the local app. The key remains on the server and is excluded from Git. Google requires its own project/billing configuration.
 
-Open **http://127.0.0.1:5173** → Start planning → enter a city and country, dates, days, travelers and budget → Ask the Ollama agent. Generated activities, explanations, estimates and forecasts appear in the brief. The illustrated map remains a separate sample.
+Open **http://127.0.0.1:5173** → Start planning → enter a city and country, dates, days, travelers and budget → Ask the Roam agent. Generated activities, explanations, estimates, forecasts, and an interactive coordinate-fitted route map appear in the brief. The homepage diorama remains an illustrative sample.
 
 `npm run dev:local` rebuilds the UI and backend, then serves both on the same loopback origin. Restart after source or environment edits. It avoids the Windows Vite/esbuild subprocess issue on the original demo machine. The default model is qwen2.5:3b; set `OLLAMA_MODEL` to a larger installed tool-capable model when hardware allows.
 
@@ -148,7 +148,7 @@ Open **http://127.0.0.1:5173** → Start planning → enter a city and country, 
 - Zod validates requests, tool arguments, provider responses and final plans. Every returned place ID must come from a lookup. Names and coordinates are supplied by the server; activity totals are recalculated per traveler.
 - The tool loop allows six model responses, up to four tools per response, per-provider timeouts and a six-minute deadline checked between rounds. Invalid JSON and invalid plans get correction attempts. Failed tools appear as warnings; exhausted planning returns an error.
 - Only one local planning request runs at a time. The local server checks host/origin and limits request bodies.
-- Costs are AI activity estimates in USD, excluding flights and accommodation. Prices, opening hours, availability and bookings are not verified. No Plaid, booking, consensus or live map integration is implemented yet.
+- Costs are AI activity estimates in USD, excluding flights and accommodation. Prices, opening hours, availability and bookings are not verified. The generated route view plots verified coordinates and links to Google Maps; Plaid, booking, group consensus, and map-tile navigation are not implemented yet.
 
 ### API and verification
 
@@ -182,3 +182,4 @@ Start OmniRoute separately with `npx omniroute@latest` or its Docker image, open
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+
